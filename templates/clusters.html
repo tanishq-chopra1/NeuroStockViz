@@ -1,0 +1,210 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <title>Stock Clusters - NeuroStockViz</title>
+  <script src="https://d3js.org/d3.v7.min.js"></script>
+  <style>
+    html, body {
+      margin: 0;
+      padding: 0;
+      font-family: 'Segoe UI', sans-serif;
+      background-color: #000;
+      height: 100%;
+      width: 100%;
+      color: #ccc;
+      overflow: hidden;
+    }
+    header {
+        background-color: #111;
+        color: #ccc;
+        padding: 10px;
+        text-align: center;
+      }
+    #controls {
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      gap: 20px;
+      flex-wrap: wrap;
+      padding: 10px;
+      background: #000;
+      border-bottom: 1px solid #333;
+      font-size: 14px;
+    }
+    select {
+      background-color: #222;
+      color: #ccc;
+      border: 1px solid #555;
+      border-radius: 4px;
+      padding: 4px 8px;
+      font-size: 14px;
+    }
+    svg {
+      width: 100vw;
+      height: calc(100vh - 140px);
+      display: block;
+      background-color: #000;
+    }
+    .back-button {
+      background: none;
+      color: #00c8ff;
+      text-decoration: underline;
+      font-size: 13px;
+      border: none;
+      padding: 0;
+      margin-left: 10px;
+      cursor: pointer;
+    }
+    .back-button:hover {
+        text-decoration: none;
+        color: #33d1ff;
+    }
+    .tooltip {
+        position: absolute;
+        background: rgba(255, 255, 255, 0.95);
+        padding: 6px 10px;
+        border: 1px solid #ccc;
+        border-radius: 4px;
+        pointer-events: none;
+        font-size: 13px;
+        color: #000;
+        box-shadow: 2px 2px 5px rgba(0,0,0,0.2);
+        display: none;
+        z-index: 10;
+        transition: opacity 0.2s ease-in-out;
+      }
+  </style>
+</head>
+<div class="tooltip" id="tooltip"></div>
+<body>
+    <header>
+        <h2>NeuroStockViz</h2>
+        <p>Stock Cluster View - Grouped by K-Means Clustering</p>
+        <a href="/home" class="back-button">Back to Home</a>
+      </header>
+
+  <div id="controls">
+    <label>Start Year:
+      <select id="startYear"></select>
+    </label>
+    <label>End Year:
+      <select id="endYear"></select>
+    </label>
+    <label>Clusters:
+      <select id="numClusters">
+        <option>3</option>
+        <option selected>4</option>
+        <option>5</option>
+        <option>6</option>
+      </select>
+    </label>
+  </div>
+
+  <svg></svg>
+
+  <script>
+    const svg = d3.select("svg");
+    const width = window.innerWidth;
+    const height = window.innerHeight - 140;
+    const color = d3.scaleOrdinal(d3.schemeCategory10);
+    const tooltip = d3.select("#tooltip");
+
+    function populateYearSelects() {
+      const startYearSelect = document.getElementById("startYear");
+      const endYearSelect = document.getElementById("endYear");
+      for (let year = 2010; year <= 2025; year++) {
+        const startOpt = document.createElement("option");
+        const endOpt = document.createElement("option");
+        startOpt.value = endOpt.value = year;
+        startOpt.text = endOpt.text = year;
+        if (year === 2014) startOpt.selected = true;
+        if (year === 2024) endOpt.selected = true;
+        startYearSelect.appendChild(startOpt);
+        endYearSelect.appendChild(endOpt);
+      }
+    }
+
+    function fetchAndDraw() {
+      const start = document.getElementById("startYear").value;
+      const end = document.getElementById("endYear").value;
+      const k = document.getElementById("numClusters").value;
+
+      fetch(`/api/clusters?start=${start}&end=${end}&k=${k}`)
+        .then(res => res.json())
+        .then(data => {
+          svg.selectAll("*").remove();
+
+          const nodes = Object.keys(data).map(ticker => ({
+            id: ticker,
+            group: data[ticker]
+          }));
+
+          const simulation = d3.forceSimulation(nodes)
+            .force("charge", d3.forceManyBody().strength(-200))
+            .force("center", d3.forceCenter(width / 2, height / 2))
+            .force("collision", d3.forceCollide(35))
+            .force("x", d3.forceX(width / 2).strength(0.05))
+            .force("y", d3.forceY(height / 2).strength(0.05))
+            .on("tick", ticked);
+
+          const node = svg.selectAll("g")
+            .data(nodes)
+            .enter()
+            .append("g")
+            .attr("class", "node")
+            .on("mouseover", (event, d) => {
+                tooltip.style("display", "block")
+                       .html(`<strong>${d.id}</strong><br>Cluster: ${d.group}`);
+              })
+              .on("mousemove", (event) => {
+                tooltip
+                .style("left", Math.min(event.pageX + 10, window.innerWidth - 150) + "px")
+                .style("top", (event.pageY + 10) + "px");
+              })
+              .on("mouseout", () => {
+                tooltip.style("display", "none");
+            });
+
+          node.append("circle")
+            .attr("r", 18)
+            .attr("fill", d => color(d.group));
+
+          node.append("text")
+            .text(d => d.id)
+            .attr("text-anchor", "middle")
+            .attr("dy", 5)
+            .style("font-size", "12px");
+
+          function ticked() {
+            node.attr("transform", d => {
+              d.x = Math.max(30, Math.min(width - 30, d.x));
+              d.y = Math.max(30, Math.min(height - 30, d.y));
+              return `translate(${d.x},${d.y})`;
+            });
+          }
+        })
+        .catch(err => {
+          svg.selectAll("*").remove();
+          svg.append("text")
+            .attr("x", width / 2)
+            .attr("y", height / 2)
+            .attr("text-anchor", "middle")
+            .style("fill", "crimson")
+            .style("font-size", "16px")
+            .text("Failed to load cluster data.");
+          console.error("Cluster fetch error:", err);
+        });
+    }
+
+    document.getElementById("startYear").addEventListener("change", fetchAndDraw);
+    document.getElementById("endYear").addEventListener("change", fetchAndDraw);
+    document.getElementById("numClusters").addEventListener("change", fetchAndDraw);
+
+    window.onload = () => {
+      populateYearSelects();
+      fetchAndDraw();
+    };
+  </script>
+</body>
+</html>

@@ -1,0 +1,329 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>NeuroStockViz - Explore Stock Correlations</title>
+  <script src="https://d3js.org/d3.v7.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+  <style>
+    body {
+      font-family: 'Segoe UI', sans-serif;
+      margin: 0;
+      overflow-y: auto;
+      background-color: black;
+      color: #ccc;
+    }
+    
+    .node { stroke: #fff; stroke-width: 1.5px; }
+    .link { stroke: #999; stroke-opacity: 0.6; }
+    .highlight { stroke: red; stroke-width: 3px; }
+    #controls {
+      display: flex;
+      flex-wrap: wrap;
+      align-items: center;
+      justify-content: center;
+      gap: 10px;
+      margin: 10px 20px;
+      font-size: 14px;
+      text-align: center;
+    }
+    .tooltip {
+      position: absolute;
+      background: rgba(20, 20, 20, 0.95);
+      padding: 5px 10px;
+      border: 1px solid #444;
+      border-radius: 4px;
+      pointer-events: none;
+      font-size: 12px;
+      color: #eee;
+      box-shadow: 2px 2px 5px rgba(0,0,0,0.1);
+    }
+    #layoutContainer {
+      display: grid;
+      grid-template-columns: 1fr 1fr 1fr 7fr;
+      gap: 10px;
+      margin: 10px 20px;
+      height: calc(100vh - 180px);
+    }
+    .side-panel {
+      font-size: 13px;
+      background-color: #111;
+      border: 1px solid #333;
+      padding: 6px;
+      overflow-y: auto;
+      min-height: 100%;
+      color: #ccc;
+    }
+    #graphContainer {
+      flex: 1;
+      height: 100%;
+      background-color: #000;
+    }
+    svg {
+      width: 100%;
+      height: 100%;
+    }
+    header {
+      background-color: #111;
+      color: #ccc;
+      padding: 4px;
+      text-align: center;
+    }
+    select, input[type="number"], input[type="range"], button {
+      background-color: #222;
+      color: #ccc;
+      border: 1px solid #555;
+      border-radius: 4px;
+      padding: 4px;
+    }
+
+    button:hover {
+      background-color: #333;
+    }
+
+    input[type="range"] {
+      -webkit-appearance: none;
+      width: 150px;
+      height: 6px;
+      background: #555;
+      border-radius: 3px;
+      outline: none;
+      margin: 0 10px;
+    }
+
+    input[type="range"]::-webkit-slider-thumb {
+      -webkit-appearance: none;
+      height: 16px;
+      width: 16px;
+      background: #00c8ff;
+      border-radius: 50%;
+      cursor: pointer;
+      border: 2px solid white;
+    }
+
+    input[type="range"]::-moz-range-thumb {
+      height: 16px;
+      width: 16px;
+      background: #00c8ff;
+      border-radius: 50%;
+      cursor: pointer;
+      border: 2px solid white;
+    }
+
+    input[type="range"]::-ms-thumb {
+      height: 16px;
+      width: 16px;
+      background: #00c8ff;
+      border-radius: 50%;
+      cursor: pointer;
+      border: 2px solid white;
+    }
+  </style>
+</head>
+<body>
+  <header>
+    <h2 style="font-size: 20px; margin: 4px;">NeuroStockViz</h2>
+    <p style="margin: 2px; font-size: 13px;">Visualize stock correlations like a neural network.</p>
+    <a href="/home" style="color: #00c8ff; text-decoration: underline;">Back to Home</a>
+  </header>
+
+  <div id="controls">
+    <label for="stockSelect">Select Stock: </label>
+    <select id="stockSelect">
+      <option value="">--None--</option>
+    </select>
+    <label for="sectorSelect">Select Sector: </label>
+    <select id="sectorSelect">
+      <option value="All">--All--</option>
+      <option value="Technology">Technology</option>
+      <option value="Healthcare">Healthcare</option>
+      <option value="Financial">Financial</option>
+      <option value="Consumer">Consumer</option>
+      <option value="Industrial">Industrial</option>
+      <option value="Energy">Energy</option>
+    </select>
+    <label for="threshold">Correlation Threshold: </label>
+    <input type="range" id="threshold" min="0" max="1" step="0.05" value="0.5">
+    <span id="thresholdValue">0.5</span>
+    <label for="startYear">Start Year: </label>
+    <input type="number" id="startYear" value="2014" min="2010" max="2024">
+    <label for="endYear">End Year: </label>
+    <input type="number" id="endYear" value="2024" min="2014" max="2024">
+    <button id="updateButton">Update Visualization</button>
+  </div>
+
+
+  <div id="layoutContainer">
+    <div id="nonCorrelatedList" class="side-panel"></div>
+    <div id="indirectlyCorrelatedList" class="side-panel"></div>
+    <div id="correlatedList" class="side-panel"></div>
+    <div id="graphContainer">
+      <svg></svg>
+    </div>
+  </div>
+  <div id="tooltip" class="tooltip" style="display: none;"></div>
+
+  <script>
+    const stockList = ["AAPL", "MSFT", "GOOGL", "AMZN", "JNJ", "V", "WMT", "JPM", "PG", "UNH", "AXP", "BA", "CAT", "CSCO", "CVX", "DIS", "GS", "HD", "HON", "IBM", "INTC", "KO", "MCD", "MMM", "MRK", "NKE", "TRV", "WBA", "XOM", "DOW"];
+    const selectElement = document.getElementById("stockSelect");
+    stockList.forEach(stock => {
+      const option = document.createElement("option");
+      option.value = stock;
+      option.text = stock;
+      selectElement.appendChild(option);
+    });
+
+    const svg = d3.select("svg"),
+          width = +svg.node().getBoundingClientRect().width,
+          height = +svg.node().getBoundingClientRect().height;
+
+    let simulation = d3.forceSimulation()
+        .force("link", d3.forceLink().id(d => d.id).distance(150))
+        .force("charge", d3.forceManyBody().strength(-300))
+        .force("center", d3.forceCenter(width / 2, height / 2));
+
+    const color = d3.scaleOrdinal(d3.schemeCategory10);
+    const tooltip = d3.select("#tooltip");
+
+    document.getElementById("threshold").addEventListener("input", function() {
+      document.getElementById("thresholdValue").textContent = this.value;
+    });
+
+    function updateGraph(data) {
+      svg.selectAll("*").remove();
+      const selectedStock = document.getElementById("stockSelect").value;
+      if (data.nodes.length === 0 || data.edges.length === 0) {
+        svg.append("text")
+          .attr("x", width / 2)
+          .attr("y", height / 2)
+          .attr("text-anchor", "middle")
+          .style("font-size", "20px")
+          .style("fill", "#666")
+          .text("No correlations found for the selected stock and sector.");
+        return;
+      }
+
+      data.nodes.sort((a, b) => a.id === selectedStock ? -1 : b.id === selectedStock ? 1 : 0);
+
+      const link = svg.append("g")
+          .attr("class", "links")
+          .selectAll("line")
+          .data(data.edges)
+          .enter()
+          .append("line")
+          .attr("class", d => d.highlight ? "link highlight" : "link")
+          .attr("stroke-width", d => Math.abs(d.value) * 2)
+          .on("mouseover", function(event, d) {
+              tooltip.style("display", "block").html(`${d.source.id} - ${d.target.id}<br>Correlation: ${d.value.toFixed(2)}`);
+          })
+          .on("mousemove", function(event) {
+              tooltip.style("left", (event.pageX + 10) + "px").style("top", (event.pageY + 10) + "px");
+          })
+          .on("mouseout", () => tooltip.style("display", "none"));
+
+      const node = svg.append("g")
+          .attr("class", "nodes")
+          .selectAll("g")
+          .data(data.nodes)
+          .enter().append("g")
+          .call(d3.drag()
+              .on("start", dragstarted)
+              .on("drag", dragged)
+              .on("end", dragended));
+
+      node.append("circle")
+      .attr("r", d => {
+        if (d.id === selectedStock) return 16;
+        if (data.correlated.map(x => x.split(":")[0]).includes(d.id)) return 12;
+        if (data.indirectly_correlated && data.indirectly_correlated.map(x => x.split(":")[0]).includes(d.id)) return 9;
+        return 6;
+      })
+          .attr("fill", d => color(d.id))
+          .attr("stroke", d => d.id === selectedStock ? "black" : "#fff")
+          .attr("stroke-width", d => d.id === selectedStock ? 3 : 1.5);
+
+      node.append("text")
+          .attr("x", 12)
+          .attr("y", 3)
+          .text(d => d.id)
+          .style("font-size", "12px")
+          .style("fill", "#ddd");
+
+      simulation.nodes(data.nodes);
+      simulation.force("link").links(data.edges);
+      simulation.alpha(1).restart();
+
+      simulation.on("tick", () => {
+        link.attr("x1", d => d.source.x)
+            .attr("y1", d => d.source.y)
+            .attr("x2", d => d.target.x)
+            .attr("y2", d => d.target.y);
+          
+        const selectedStock = document.getElementById("stockSelect").value;
+
+        node.attr("transform", d => {
+          if (d.id === selectedStock && d.fx == null && d.fy == null) {
+            d.y -= 1; // Apply a small upward force
+          }
+          return `translate(${d.x},${d.y})`;
+        });
+
+        const selectedNode = data.nodes.find(n => n.id === selectedStock);
+        if (selectedNode && selectedNode.fx == null && selectedNode.fy == null) {
+          selectedNode.y = 50;  // Push it to the top
+        }
+      });
+
+      const formatList = list =>
+        list.sort((a, b) => Math.abs(parseFloat(b.split(": ")[1])) - Math.abs(parseFloat(a.split(": ")[1])))
+            .map(entry => {
+              const val = parseFloat(entry.split(": ")[1]);
+              const color = val >= 0 ? "green" : "crimson";
+              return `<span style="color:${color}">${entry}</span>`;
+            }).join("<br>");
+
+      document.getElementById("correlatedList").innerHTML = "<b>Correlated Stocks</b><br>" + formatList(data.correlated);
+      const cleanedNonCorrelated = (data.non_correlated || []).filter(entry => {
+        const ticker = entry.split(":")[0];
+        return !(data.indirectly_correlated || []).some(indirect => indirect.startsWith(ticker + ":"));
+      });
+      document.getElementById("nonCorrelatedList").innerHTML = "<b>Below-Threshold Stocks</b><br>" + formatList(cleanedNonCorrelated);
+      document.getElementById("indirectlyCorrelatedList").innerHTML = "<b>Indirectly Correlated Stocks</b><br>" + formatList(data.indirectly_correlated || []);
+    }
+
+    function dragstarted(event, d) {
+      if (!event.active) simulation.alphaTarget(0.3).restart();
+      d.fx = d.x;
+      d.fy = d.y;
+    }
+    function dragged(event, d) {
+      d.fx = event.x;
+      d.fy = event.y;
+    }
+    function dragended(event, d) {
+      if (!event.active) simulation.alphaTarget(0);
+      d.fx = null;
+      d.fy = null;
+    }
+
+    function fetchData() {
+      const startYear = document.getElementById("startYear").value;
+      const endYear = document.getElementById("endYear").value;
+      const selectedStock = document.getElementById("stockSelect").value;
+      const threshold = document.getElementById("threshold").value;
+      const selectedSector = document.getElementById("sectorSelect").value;
+
+      const url = `/api/correlations?start_year=${startYear}&end_year=${endYear}&selected_stock=${selectedStock}&threshold=${threshold}&sector=${selectedSector}`;
+      fetch(url)
+        .then(response => response.json())
+        .then(data => {
+          data.edges = data.edges.filter(d => Math.abs(d.value) >= parseFloat(threshold));
+          updateGraph(data);
+        });
+    }
+
+    document.getElementById("updateButton").addEventListener("click", fetchData);
+    fetchData();
+  </script>
+</body>
+</html>

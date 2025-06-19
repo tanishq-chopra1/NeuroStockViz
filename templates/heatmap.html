@@ -1,0 +1,166 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>Heatmap View - NeuroStockViz</title>
+  <script src="https://cdn.plot.ly/plotly-latest.min.js"></script>
+  <style>
+    body {
+      font-family: sans-serif;
+      margin: 20px;
+      text-align: center;
+      background-color: black;
+      color: #ccc;
+    }
+    header {
+      background-color: #111; 
+      color: #ccc; 
+      padding: 6px; 
+      text-align: center;
+      font-family: 'Segoe UI', sans-serif;
+    }
+    h2, p {
+      margin: 4px;
+      color: #ccc;
+    }
+    #heatmapDiv {
+      width: 90%;
+      max-width: 1000px;
+      height: 700px;
+      margin: auto;
+    }
+    a {
+      color: #00c8ff;
+      text-decoration: underline;
+      font-weight: bold;
+      background: none;
+      padding: 0;
+      border: none;
+      border-radius: 0;
+    }
+
+    select {
+      -webkit-appearance: none;
+      -moz-appearance: none;
+      appearance: none;
+      background: #222;
+      border: 1px solid #555;
+      padding: 4px 8px;
+      color: #ccc;
+      font-size: 14px;
+      border-radius: 4px;
+    }
+    label {
+      font-weight: bold;
+      margin-right: 5px;
+    }
+
+  </style>
+</head>
+<body>
+  <header>
+        <h2>NeuroStockViz</h2>
+        <p>Heatmap View - Pairwise Stock Correlations</p>
+        <a href="/home">Back to Home</a>
+      </header>
+      
+      <div style="margin-top: 20px;">
+        <label for="startYear">Start Year:</label>
+        <select id="startYear">
+            <option value="2010">2010</option>
+            <option value="2011">2011</option>
+            <option value="2012">2012</option>
+            <option value="2013">2013</option>
+            <option value="2014" selected>2014</option>
+            <option value="2015">2015</option>
+            <option value="2016">2016</option>
+            <option value="2017">2017</option>
+            <option value="2018">2018</option>
+            <option value="2019">2019</option>
+            <option value="2020">2020</option>
+            <option value="2021">2021</option>
+            <option value="2022">2022</option>
+            <option value="2023">2023</option>
+            <option value="2024">2024</option>
+            <option value="2025">2025</option>
+        </select>
+        <label for="endYear">End Year:</label>
+        <select id="endYear">
+            <option value="2010">2010</option>
+            <option value="2011">2011</option>
+            <option value="2012">2012</option>
+            <option value="2013">2013</option>
+            <option value="2014">2014</option>
+            <option value="2015">2015</option>
+            <option value="2016">2016</option>
+            <option value="2017">2017</option>
+            <option value="2018">2018</option>
+            <option value="2019">2019</option>
+            <option value="2020">2020</option>
+            <option value="2021">2021</option>
+            <option value="2022">2022</option>
+            <option value="2023">2023</option>
+            <option value="2024" selected>2024</option>
+            <option value="2025">2025</option>
+          </select>
+      </div>
+      
+  <div id="heatmapDiv"></div>
+  
+
+  <script>
+  
+    function fetchHeatmap() {
+        const start = document.getElementById("startYear").value;
+        const end = document.getElementById("endYear").value;
+        fetch(`/api/correlation_matrix?start=${start}&end=${end}`)
+          .then(res => res.json())
+          .then(correlationMatrix => {
+            const stocks = Object.keys(correlationMatrix);
+            if (stocks.length < 2) {
+              document.getElementById('heatmapDiv').innerHTML = "<p style='color: red;'>Not enough data to display heatmap. Try a different year range.</p>";
+              return;
+            }
+
+            const zValues = stocks.map(row => stocks.map(col => correlationMatrix[row][col]));
+
+            Plotly.newPlot('heatmapDiv', [{
+              x: stocks,
+              y: stocks,
+              z: zValues,
+              type: 'heatmap',
+              colorscale: [
+                [0, '#d73027'],
+                [0.25, '#f46d43'],
+                [0.5, '#ffffbf'],
+                [0.75, '#74add1'],
+                [1, '#4575b4']
+              ],
+              colorbar: {
+                title: 'Correlation',
+                titleside: 'right'
+              },
+              zmin: -1,
+              zmax: 1
+            }], {
+              margin: { t: 60 },
+              xaxis: { title: "Stocks", tickangle: -45, automargin: true },
+              yaxis: { title: "Stocks", automargin: true },
+              paper_bgcolor: 'black',
+              plot_bgcolor: 'black',
+              font: { color: '#ccc' },
+              responsive: true
+            });
+          })
+          .catch(error => {
+            console.error("Error loading correlation matrix:", error);
+            document.getElementById('heatmapDiv').innerHTML = "Failed to load heatmap.";
+        });
+    }
+
+    document.getElementById("startYear").addEventListener("change", fetchHeatmap);
+    document.getElementById("endYear").addEventListener("change", fetchHeatmap);
+    window.onload = fetchHeatmap;
+  </script>
+</body>
+</html>

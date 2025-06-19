@@ -1,0 +1,228 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Mini Chart - NeuroStockViz</title>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+  <style>
+    body {
+        font-family: 'Segoe UI', sans-serif;
+        text-align: center;
+        padding: 40px 20px;
+        background-color: black;
+        color: #ccc;
+      }
+      h2 {
+        margin-bottom: 20px;
+        color: #ccc;
+      }
+      #chartContainer {
+        width: 90%;
+        max-width: 1000px;
+        margin: 30px auto;
+        height: 500px;
+        background-color: #1a1a1a;
+        border: 1px solid #444;
+        border-radius: 8px;
+        padding: 20px;
+        box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+        color: #ccc;
+      }
+      select {
+        padding: 8px 12px;
+        font-size: 16px;
+        border-radius: 4px;
+        background: #222;
+        color: #ccc;
+        border: 1px solid #555;
+      }
+  </style>
+</head>
+<body>
+  <header style="background-color: #111; color: #ccc; padding: 10px; text-align: center;">
+    <h2>NeuroStockViz</h2>
+    <p style="margin: 5px;">Time-Series Mini Chart</p>
+    <a href="/home" style="color: #00c8ff; text-decoration: underline;">Back to Home</a>
+  </header>
+  <label for="stockDropdown">Select Stock 1:</label>
+  <select id="stockDropdown" aria-label="Select the first stock to view time series data">
+    <option value="">--Select--</option>
+  </select>
+  <br><br>
+  <label for="stockDropdown2">Select Stock 2:</label>
+  <select id="stockDropdown2" aria-label="Select the second stock to view time series data">
+    <option value="">--Select--</option>
+  </select>
+  <br><br>
+  <label for="startYear">Start Year:</label>
+  <select id="startYear">
+    <option value="2010">2010</option>
+    <option value="2011">2011</option>
+    <option value="2012">2012</option>
+    <option value="2013">2013</option>
+    <option value="2014">2014</option>
+    <option value="2015">2015</option>
+    <option value="2016">2016</option>
+    <option value="2017">2017</option>
+    <option value="2018">2018</option>
+    <option value="2019">2019</option>
+    <option value="2020">2020</option>
+    <option value="2021">2021</option>
+    <option value="2022">2022</option>
+    <option value="2023">2023</option>
+    <option value="2024">2024</option>
+    <option value="2025">2025</option>
+  </select>
+  <label for="endYear">End Year:</label>
+  <select id="endYear">
+    <option value="2010">2010</option>
+    <option value="2011">2011</option>
+    <option value="2012">2012</option>
+    <option value="2013">2013</option>
+    <option value="2014">2014</option>
+    <option value="2015">2015</option>
+    <option value="2016">2016</option>
+    <option value="2017">2017</option>
+    <option value="2018">2018</option>
+    <option value="2019">2019</option>
+    <option value="2020">2020</option>
+    <option value="2021">2021</option>
+    <option value="2022">2022</option>
+    <option value="2023">2023</option>
+    <option value="2024">2024</option>
+    <option value="2025">2025</option>
+  </select>
+  <div id="chartContainer">
+    <canvas id="miniChartCanvas"></canvas>
+  </div>
+  <br>
+  <div id="loadingMessage" style="color: #00c8ff; margin-top: 20px; display: none;">Loading data, please wait...</div>
+  <div id="errorMessage" style="color: crimson; margin-top: 20px; display: none;"></div>
+  <script>
+    const stockList = ["AAPL", "MSFT", "GOOGL", "AMZN", "JNJ", "V", "WMT", "JPM", "PG", "UNH", "AXP", "BA", "CAT", "CSCO", "CVX", "DIS", "GS", "HD", "HON", "IBM", "INTC", "KO", "MCD", "MMM", "MRK", "NKE", "TRV", "WBA", "XOM", "DOW"];
+    const dropdown1 = document.getElementById('stockDropdown');
+    const dropdown2 = document.getElementById('stockDropdown2');
+    const startYearSelect = document.getElementById("startYear");
+    const endYearSelect = document.getElementById("endYear");
+
+    stockList.forEach(stock => {
+      const opt1 = document.createElement('option');
+      const opt2 = document.createElement('option');
+      opt1.value = opt2.value = stock;
+      opt1.text = opt2.text = stock;
+      dropdown1.appendChild(opt1);
+      dropdown2.appendChild(opt2);
+    });
+
+    startYearSelect.value = "2014";
+    endYearSelect.value = "2024";
+
+    let miniChart;
+
+    function fetchDataWithRetry(url, retries = 3, delay = 1000) {
+      return fetch(url)
+        .then(res => {
+          if (!res.ok) throw new Error(`Failed to fetch data.`);
+          return res.json();
+        })
+        .catch(error => {
+          if (retries > 0) {
+            return new Promise(resolve => setTimeout(resolve, delay))
+              .then(() => fetchDataWithRetry(url, retries - 1, delay * 2));
+          }
+          throw error;
+        });
+    }
+
+    function updateChart() {
+      const ticker1 = dropdown1.value;
+      const ticker2 = dropdown2.value;
+      const errorMessage = document.getElementById("errorMessage");
+      const loadingMessage = document.getElementById("loadingMessage");
+      errorMessage.style.display = "none"; // Hide error message initially
+      loadingMessage.style.display = "block"; // Show loading message
+
+      if (!ticker1 && !ticker2) {
+        loadingMessage.style.display = "none"; // Hide loading if no tickers selected
+        return;
+      }
+
+      const startYear = startYearSelect.value;
+      const endYear = endYearSelect.value;
+      const canvas = document.getElementById("miniChartCanvas");
+      const ctx = canvas.getContext("2d");
+      ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+      const fetchData = (ticker) => {
+        const url = `/api/timeseries?ticker=${encodeURIComponent(ticker)}&start=${startYear}&end=${endYear}`;
+        return fetchDataWithRetry(url);
+      };
+
+      Promise.all([ticker1 ? fetchData(ticker1) : null, ticker2 ? fetchData(ticker2) : null])
+        .then(([data1, data2]) => {
+          if (miniChart) miniChart.destroy();
+          miniChart = new Chart(ctx, {
+            type: 'line',
+            data: {
+              labels: data1 ? data1.dates : data2.dates,
+              datasets: [
+                data1 && {
+                  label: `${ticker1} Price`,
+                  data: data1.prices,
+                  borderColor: 'steelblue',
+                  fill: false,
+                  tension: 0.1
+                },
+                data2 && {
+                  label: `${ticker2} Price`,
+                  data: data2.prices,
+                  borderColor: 'crimson',
+                  fill: false,
+                  tension: 0.1
+                }
+              ].filter(Boolean)
+            },
+            options: {
+              responsive: true,
+              plugins: {
+                legend: {
+                  labels: {
+                    color: '#fff'
+                  },
+                  onClick: null
+                }
+              },
+              scales: {
+                x: {
+                  display: true,
+                  title: { display: true, text: "Date" },
+                  grid: { color: '#444' },
+                  ticks: { color: '#ccc' }
+                },
+                y: {
+                  display: true,
+                  title: { display: true, text: "Price" },
+                  grid: { color: '#444' },
+                  ticks: { color: '#ccc' }
+                }
+              }
+            }
+          });
+        })
+        .catch(error => {
+          errorMessage.textContent = "Error fetching data: " + error.message;
+          errorMessage.style.display = "block"; // Show error message
+        })
+        .finally(() => {
+          loadingMessage.style.display = "none"; // Hide loading message
+        });
+    }
+
+    dropdown1.addEventListener("change", updateChart);
+    dropdown2.addEventListener("change", updateChart);
+    startYearSelect.addEventListener("change", updateChart);
+    endYearSelect.addEventListener("change", updateChart);
+  </script>
+</body>
+</html>
